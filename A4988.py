@@ -1,6 +1,9 @@
 import RPi.GPIO as GPIO
 from time import sleep
 
+class StopMotorInterrupt(Exception):
+    """ Stop the motor """
+    pass
 
 class A4988Nema(object):
     """ Class to control a Nema bi-polar stepper motor with a A4988 also tested with DRV8825"""
