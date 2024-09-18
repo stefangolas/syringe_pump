@@ -1,3 +1,7 @@
+import RPi.GPIO as GPIO
+from time import sleep
+
+
 class A4988Nema(object):
     """ Class to control a Nema bi-polar stepper motor with a A4988 also tested with DRV8825"""
     def __init__(self, direction_pin, step_pin, mode_pins, motor_type="A4988"):
