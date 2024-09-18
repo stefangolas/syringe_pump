@@ -1,5 +1,7 @@
 import RPi.GPIO as GPIO
 from time import sleep
+import sys
+import time
 
 class StopMotorInterrupt(Exception):
     """ Stop the motor """
