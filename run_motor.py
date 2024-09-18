@@ -5,7 +5,7 @@ import sys
 
 DIR_PIN = 22  # Direction GPIO Pin
 STEP_PIN = 23  # Step GPIO Pin
-MODE_PINS = (-1, 15, 18)  # Microstep Resolution GPIO Pins
+MODE_PINS = (17, 27, 25)  # Microstep Resolution GPIO Pins
 
 motor = A4988Nema(DIR_PIN, STEP_PIN, MODE_PINS)
 # Set up GPIO pins
@@ -23,12 +23,12 @@ try:
     print("Running motor...")
     GPIO.output(EN_pin,GPIO.LOW)
     # Run the motor: 200 steps (1 revolution for a 1.8-degree stepper) clockwise
-    motor.motor_go(clockwise=True, steptype="Full", steps=200, stepdelay=0.05, verbose=True)
+    motor.motor_go(clockwise=True, steptype="1/16", steps=200, stepdelay=0.05, verbose=True)
     sleep(1)  # Wait for 1 second
     
     print("Reversing motor direction...")
     # Run the motor: 200 steps counter-clockwise
-    motor.motor_go(clockwise=False, steptype="Full", steps=200, stepdelay=0.005)
+    motor.motor_go(clockwise=False, steptype="1/16", steps=200, stepdelay=0.005)
     GPIO.output(EN_pin,GPIO.HIGH)
     print("Motor sequence completed.")
 
