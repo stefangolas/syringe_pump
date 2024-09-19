@@ -23,12 +23,12 @@ try:
     print("Running motor...")
     GPIO.output(EN_pin,GPIO.LOW)
     # Run the motor: 200 steps (1 revolution for a 1.8-degree stepper) clockwise
-    motor.motor_go(clockwise=True, steptype="1/16", steps=200, stepdelay=0.05, verbose=True)
+    motor.motor_go(clockwise=True, steptype="1/8", steps=600, stepdelay=0.005, verbose=True)
     sleep(1)  # Wait for 1 second
     
     print("Reversing motor direction...")
     # Run the motor: 200 steps counter-clockwise
-    motor.motor_go(clockwise=False, steptype="1/16", steps=200, stepdelay=0.005)
+    #motor.motor_go(clockwise=False, steptype="Full", steps=200, stepdelay=0.5)
     GPIO.output(EN_pin,GPIO.HIGH)
     print("Motor sequence completed.")
 
