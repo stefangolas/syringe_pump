@@ -1,3 +1,16 @@
+Metadata-Version: 2.1
+Name: syringe_pump
+Version: 0.1.0
+Summary: A Python library for controlling syringe pumps
+Home-page: https://github.com/yourusername/syringe_pump
+Author: Stefan Golas
+License: MIT
+Project-URL: Homepage, https://github.com/yourusername/syringe_pump
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.25.0
+Requires-Dist: agrow-pumps>=0.1.0
+
 # Syringe Pump
 
 A Python library for controlling syringe pumps.
