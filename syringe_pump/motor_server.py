@@ -19,18 +19,20 @@ class MotorServer:
             data = request.json
             steps = data.get('steps', 200)
             direction = data.get('direction', 'clockwise')
+            steptype = data.get('steptype', '1/8')
             
             clockwise = direction.lower() == 'clockwise'
             
             try:
-                self.motor.motor_go(clockwise=clockwise, steptype="Full", steps=steps, stepdelay=0.005)
+                self.motor.motor_go(clockwise=clockwise, steptype=steptype, steps=steps, stepdelay=0.0005)
+                print(f"Motor ran {steps} steps in {'clockwise' if clockwise else 'counter-clockwise'} direction")
                 return jsonify({
                     "status": "success", 
                     "message": f"Motor ran {steps} steps in {'clockwise' if clockwise else 'counter-clockwise'} direction"
                 }), 200
             except Exception as e:
                 return jsonify({"status": "error", "message": str(e)}), 500
-
+        
         @app.route('/status', methods=['GET'])
         def status():
             return jsonify({"status": "running"}), 200

@@ -51,3 +51,12 @@ def check_status(url: str = None) -> Optional[Dict[str, Any]]:
     except requests.RequestException as e:
         print(f"An error occurred while checking the status: {e}")
         return None
+
+if __name__=='__main__':
+    url = "http://10.194.22.184:5000"
+    #import IPython
+    #IPython.embed()
+    run_motor(steps=200, url=url, direction="counter-clockwise")
+    status = check_status(url=url)
+    if status:
+        print(f"Motor status: {status}")
