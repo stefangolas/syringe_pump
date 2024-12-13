@@ -2,7 +2,7 @@ import requests
 import json
 from typing import Optional, Dict, Any
 
-def run_motor(steps: int = 200, url: str = None, direction: str = "counter-clockwise") -> Optional[Dict[str, Any]]:
+def run_motor(steps: int = 200, url: str = "http://10.194.22.184:5000", direction: str = "counter-clockwise", steptype = "1/8", stepdelay = 0.0005) -> Optional[Dict[str, Any]]:
     """
     Run the motor with specified parameters.
 
@@ -21,7 +21,8 @@ def run_motor(steps: int = 200, url: str = None, direction: str = "counter-clock
     data = {
         "steps": steps,
         "direction": direction,
-        "steptype": "1/8",
+        "steptype": steptype,
+        "stepdelay": stepdelay
 
     }
     try:
@@ -57,9 +58,7 @@ def check_status(url: str = None) -> Optional[Dict[str, Any]]:
 
 if __name__=='__main__':
     url = "http://10.194.22.184:5000"
-    import IPython
-    IPython.embed()
-    run_motor(steps=2000, url=url, direction="clockwise")
+    run_motor(steps=20000, url=url, direction="clockwise")
     status = check_status(url=url)
     if status:
         print(f"Motor status: {status}")

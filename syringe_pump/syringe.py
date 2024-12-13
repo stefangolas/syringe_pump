@@ -2,16 +2,25 @@ from .curl_requests import run_motor, check_status
 from agrow_pumps import AgrowModbusInterface
 import logging
 
-vol_per_step = 0.005
+
+# Constants
+syringe_radius = 11 # mm
+step_angle = 1.8 # degrees
+thread_pitch = 0.8 # mm
+vol_per_step = 3.14159 * syringe_radius**2 * thread_pitch * step_angle / 360 # mm^3 or uL
+steps_per_vol = 1 / vol_per_step
 
 def vol_to_steps(vol):
     """Convert volume to motor steps."""
-    return vol * 200
+    return int(vol * steps_per_vol)
+
+direction_mapping = {'aspirate':'counter-clockwise', 'dispense':'clockwise'}
+
 
 class SyringePump:
     """A class to control syringe pump operations."""
 
-    def __init__(self, ip_address = None, simulating = False, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None):
+    def __init__(self, url = "http://10.194.22.184:5000", simulating = False, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None):
         """
         Initialize the SyringePump.
 
@@ -21,13 +30,13 @@ class SyringePump:
             rinse_pump_number (int): The pump number for rinse operations
             drain_pump_number (int): The pump number for drain operations
         """
-        self.ip_address = ip_address
+        self.url = url
         self.simulating = simulating
         self.rinse_pump_array = rinse_pump_array
         self.rinse_pump_number = rinse_pump_number
         self.drain_pump_number = drain_pump_number
 
-    def load_vol(self, vol):
+    def aspirate_vol(self, vol):
         """
         Load a specific volume into the syringe.
 
@@ -38,8 +47,16 @@ class SyringePump:
         if self.simulating:
             return
         steps = vol_to_steps(vol)
-        run_motor(steps=steps, url=self.ip_address, direction="counter-clockwise")
+        run_motor(steps=steps, url=self.url, direction="counter-clockwise", steptype="Half", stepdelay = 0.0001)
     
+    def dispense_vol(self, vol):
+        logging.info(f"Loading {vol} uL into syringe pump.")
+        if self.simulating:
+            return
+        steps = vol_to_steps(vol)
+        run_motor(steps=steps, url=self.url, direction="clockwise", steptype="Half", stepdelay = 0.0001)
+
+
     def rinse_trough(self, vol):
         """
         Rinse the trough with a specific volume.
