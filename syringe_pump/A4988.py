@@ -3,13 +3,17 @@ from time import sleep
 import sys
 import time
 
+bool_to_string = {True:'True', False: 'False'}
+string_to_bool = {'True':True, 'False': False, None: None}
+
+
 class StopMotorInterrupt(Exception):
     """ Stop the motor """
     pass
 
 class A4988Nema(object):
     """ Class to control a Nema bi-polar stepper motor with a A4988 also tested with DRV8825"""
-    def __init__(self, direction_pin, step_pin, mode_pins, motor_type="A4988"):
+    def __init__(self, direction_pin, step_pin, mode_pins, cache, motor_type="A4988"):
         """ class init method 3 inputs
         (1) direction type=int , help=GPIO pin connected to DIR pin of IC
         (2) step_pin type=int , help=GPIO pin connected to STEP of IC
@@ -107,7 +111,8 @@ class A4988Nema(object):
             time.sleep(initdelay)
 
             for i in range(steps):
-                if self.stop_motor:
+                stop = string_to_bool[self.cache.get('motor_stop')]
+                if stop:
                     raise StopMotorInterrupt
                 else:
                     GPIO.output(self.step_pin, True)

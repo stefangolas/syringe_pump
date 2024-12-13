@@ -20,7 +20,9 @@ def run_motor(steps: int = 200, url: str = None, direction: str = "counter-clock
     endpoint = f"{url}/run_motor"
     data = {
         "steps": steps,
-        "direction": direction
+        "direction": direction,
+        "steptype": "1/8",
+
     }
     try:
         response = requests.post(endpoint, json=data)
@@ -56,7 +58,7 @@ if __name__=='__main__':
     url = "http://10.194.22.184:5000"
     #import IPython
     #IPython.embed()
-    run_motor(steps=200, url=url, direction="counter-clockwise")
+    run_motor(steps=2000, url=url, direction="clockwise")
     status = check_status(url=url)
     if status:
         print(f"Motor status: {status}")
