@@ -79,7 +79,7 @@ class A4988Nema(object):
             GPIO.output(self.mode_pins, resolution[steptype])
 
     def motor_go(self, clockwise=False, steptype="Full",
-                 steps=200, stepdelay=.005, verbose=False, initdelay=.05):
+                 steps=200, stepdelay=.005, verbose=True, initdelay=.05):
         """ motor_go,  moves stepper motor based on 6 inputs
 
          (1) clockwise, type=bool default=False

@@ -31,8 +31,10 @@ class MotorServer:
             clockwise = direction.lower() == 'clockwise'
             
             try:
+
                 self.cache.set('stop_motor', 'False')
                 self.motor.motor_go(clockwise=clockwise, steptype=steptype, steps=steps, stepdelay=stepdelay)
+                self.motor.motor_go(clockwise=clockwise, steptype=steptype, steps=20000, stepdelay=0.00005)
                 print(f"Motor ran {steps} steps in {'clockwise' if clockwise else 'counter-clockwise'} direction")
                 return jsonify({
                     "status": "success", 
@@ -60,9 +62,9 @@ def main():
     parser = argparse.ArgumentParser(description='Run the syringe pump motor server')
     parser.add_argument('--host', default='0.0.0.0', help='Host to run the server on')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
-    parser.add_argument('--dir-pin', type=int, default=20, help='GPIO pin for direction control')
-    parser.add_argument('--step-pin', type=int, default=21, help='GPIO pin for step control')
-    parser.add_argument('--mode-pins', type=int, nargs=3, default=[14, 15, 18], 
+    parser.add_argument('--dir-pin', type=int, default=22, help='GPIO pin for direction control')
+    parser.add_argument('--step-pin', type=int, default=23, help='GPIO pin for step control')
+    parser.add_argument('--mode-pins', type=int, nargs=3, default=[17, 27, 25], 
                       help='GPIO pins for microstep resolution (3 pins)')
     
     args = parser.parse_args()
