@@ -3,7 +3,7 @@ import RPi.GPIO as GPIO
 from A4988 import A4988Nema
 import argparse
 from flask_caching import Cache
-
+import traceback
 
 
 app = Flask(__name__)
@@ -18,11 +18,15 @@ class MotorServer:
         self.mode_pins = mode_pins
         self.motor = A4988Nema(dir_pin, step_pin, mode_pins, cache)
         self.setup_routes()
+        self.cache = cache
 
     def setup_routes(self):
         @app.route('/run_motor', methods=['POST'])
         def run_motor():
+            print("Inside run motor")
             data = request.json
+            print("Data")
+            print(data)
             steps = data.get('steps', 200)
             direction = data.get('direction', 'clockwise')
             steptype = data.get('steptype', '1/8')
@@ -33,15 +37,18 @@ class MotorServer:
             try:
 
                 self.cache.set('stop_motor', 'False')
+                print("Cache values")
+                print(self.cache)
                 self.motor.motor_go(clockwise=clockwise, steptype=steptype, steps=steps, stepdelay=stepdelay)
-                self.motor.motor_go(clockwise=clockwise, steptype=steptype, steps=20000, stepdelay=0.00005)
                 print(f"Motor ran {steps} steps in {'clockwise' if clockwise else 'counter-clockwise'} direction")
                 return jsonify({
                     "status": "success", 
                     "message": f"Motor ran {steps} steps in {'clockwise' if clockwise else 'counter-clockwise'} direction"
                 }), 200
             except Exception as e:
-                return jsonify({"status": "error", "message": str(e)}), 500
+                tb = traceback.format_exc()
+                print(tb)
+                return jsonify({"status": "error", "message": str(tb)}), 500
         
         @app.route('/status', methods=['GET'])
         def status():

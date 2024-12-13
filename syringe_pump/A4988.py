@@ -13,7 +13,7 @@ class StopMotorInterrupt(Exception):
 
 class A4988Nema(object):
     """ Class to control a Nema bi-polar stepper motor with a A4988 also tested with DRV8825"""
-    def __init__(self, direction_pin, step_pin, mode_pins, cache, motor_type="A4988"):
+    def __init__(self, direction_pin, step_pin, mode_pins, cache = None, motor_type="A4988"):
         """ class init method 3 inputs
         (1) direction type=int , help=GPIO pin connected to DIR pin of IC
         (2) step_pin type=int , help=GPIO pin connected to STEP of IC
@@ -25,6 +25,7 @@ class A4988Nema(object):
         self.motor_type = motor_type
         self.direction_pin = direction_pin
         self.step_pin = step_pin
+        self.cache = cache
 
         if mode_pins[0] != -1:
             self.mode_pins = mode_pins
@@ -104,24 +105,27 @@ class A4988Nema(object):
         GPIO.output(self.direction_pin, clockwise)
         if self.mode_pins != False:
             GPIO.setup(self.mode_pins, GPIO.OUT)
-
+        print("Inside motor_go A4988")
         try:
             # dict resolution
             self.resolution_set(steptype)
             time.sleep(initdelay)
 
             for i in range(steps):
-                stop = string_to_bool[self.cache.get('motor_stop')]
-                print(stop)
-                if False:
+                if self.cache:
+                    stop = string_to_bool[self.cache.get('motor_stop')]
+                    print("Stop value")
+                    print(stop)
+                else:
+                    stop = False
+                if stop:
                     raise StopMotorInterrupt
                 else:
                     GPIO.output(self.step_pin, True)
                     time.sleep(stepdelay)
                     GPIO.output(self.step_pin, False)
                     time.sleep(stepdelay)
-                    if verbose:
-                        print("Steps count {}".format(i+1), end="\r", flush=True)
+                    print("Steps count {}".format(i+1), end="\r", flush=True)
 
         except KeyboardInterrupt:
             print("User Keyboard Interrupt : RpiMotorLib:")
@@ -131,18 +135,6 @@ class A4988Nema(object):
             print(sys.exc_info()[0])
             print(motor_error)
             print("RpiMotorLib  : Unexpected error:")
-        else:
-            # print report status
-            if verbose:
-                print("\nRpiMotorLib, Motor Run finished, Details:.\n")
-                print("Motor type = {}".format(self.motor_type))
-                print("Clockwise = {}".format(clockwise))
-                print("Step Type = {}".format(steptype))
-                print("Number of steps = {}".format(steps))
-                print("Step Delay = {}".format(stepdelay))
-                print("Intial delay = {}".format(initdelay))
-                print("Size of turn in degrees = {}"
-                      .format(degree_calc(steps, steptype)))
         finally:
             # cleanup
             GPIO.output(self.step_pin, False)
