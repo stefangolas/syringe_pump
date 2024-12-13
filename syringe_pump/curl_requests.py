@@ -26,6 +26,7 @@ def run_motor(steps: int = 200, url: str = None, direction: str = "counter-clock
     }
     try:
         response = requests.post(endpoint, json=data)
+        print(response)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -56,8 +57,8 @@ def check_status(url: str = None) -> Optional[Dict[str, Any]]:
 
 if __name__=='__main__':
     url = "http://10.194.22.184:5000"
-    #import IPython
-    #IPython.embed()
+    import IPython
+    IPython.embed()
     run_motor(steps=2000, url=url, direction="clockwise")
     status = check_status(url=url)
     if status:

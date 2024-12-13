@@ -112,7 +112,8 @@ class A4988Nema(object):
 
             for i in range(steps):
                 stop = string_to_bool[self.cache.get('motor_stop')]
-                if stop:
+                print(stop)
+                if False:
                     raise StopMotorInterrupt
                 else:
                     GPIO.output(self.step_pin, True)
