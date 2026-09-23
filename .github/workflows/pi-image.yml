@@ -1,0 +1,269 @@
+name: pi-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pi-image/**'
+      - 'syringe_pump/**'
+      - 'pyproject.toml'
+      - '.github/workflows/pi-image.yml'
+  pull_request:
+    paths:
+      - 'pi-image/**'
+      - 'syringe_pump/**'
+      - '.github/workflows/pi-image.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the image as a release asset'
+        type: boolean
+        default: false
+
+jobs:
+  lint:
+    name: manifest, scripts and server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shell syntax
+        run: bash -n pi-image/*.sh pi-image/tests/*.sh
+
+      - name: PowerShell flasher parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./pi-image/bootstrap.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { $_.ToString() }; exit 1 }
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck -S warning -e SC1090,SC1091 pi-image/*.sh pi-image/tests/*.sh
+
+      # The manifest is sourced by bash; an unquoted value with a space in it
+      # tries to execute. That bug shipped once already in the sibling repo, and
+      # bit this one during development too -- MOTORS and MOTOR_ARGS both hold
+      # spaces, so it is the likeliest thing here to get wrong.
+      - name: manifest sources cleanly and expands
+        run: |
+          set -e
+          . pi-image/pi-app.env
+          VENV="$REPO_DEST/.venv"
+          E="${APP_EXEC//\$\{VENV\}/$VENV}"
+          E="${E//\$\{REPO_DEST\}/$REPO_DEST}"
+          E="${E//\$\{SERVER_PORT\}/$SERVER_PORT}"
+          echo "ExecStart = $E"
+          case "$E" in
+            *'${'*) echo "unsubstituted placeholder remains in APP_EXEC" >&2; exit 1 ;;
+          esac
+          test -n "$APP_NAME" && test -n "$PI_USER" && test -n "$ETH_ADDRESS"
+          test -n "$MOTORS" && test -n "$SERVER_PROJECT" && test -n "$PYTHON_IMPORTS"
+
+      # A pin that is never checked is a comment.
+      - name: every external input is pinned
+        run: |
+          set -e
+          . pi-image/pi-app.env
+          die() { echo "$1" >&2; exit 1; }
+          echo "$IMAGE_SHA256" | grep -Eq "^[0-9a-f]{64}$" || die "IMAGE_SHA256 is not a sha256"
+          echo "$SDM_COMMIT" | grep -Eq "^[0-9a-f]{40}$" || die "SDM_COMMIT is not a full commit sha"
+          echo "$SDM_VERSION" | grep -Eq "^V[0-9]+[.][0-9]+$" || die "SDM_VERSION is not a release tag"
+          echo "$UV_VERSION" | grep -Eq "^[0-9]+[.][0-9]+[.][0-9]+$" || die "UV_VERSION is not a version"
+          case "$IMAGE_URL" in *latest*) die "IMAGE_URL still floats" ;; esac
+          LOCK="$SERVER_PROJECT/uv.lock"
+          test -s "$SERVER_PROJECT/pyproject.toml" || die "$SERVER_PROJECT/pyproject.toml is missing"
+          test -s "$LOCK" || die "$LOCK is missing"
+          grep -q '^version = 1$' "$LOCK" || die "$LOCK has an unexpected format"
+          grep -q 'hash = "sha256:' "$LOCK" || die "$LOCK contains no artifact hashes"
+          grep -q -- '--frozen' pi-image/cscript.sh || die "image install is not frozen"
+          grep -q 'uv sync' pi-image/cscript.sh || die "image does not install through uv sync"
+          echo "all inputs pinned"
+
+      # The lock must actually match its pyproject.toml, or --frozen fails deep
+      # inside a three-minute image build instead of here.
+      - name: the frozen environment is in sync
+        run: |
+          . pi-image/pi-app.env
+          curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" \
+            | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+          uv lock --check --project "$SERVER_PROJECT"
+
+      - name: motor spec renderer
+        run: |
+          set -e
+          . pi-image/pi-app.env
+          # The happy path, and each way a spec can be wrong. A bad pinout must
+          # fail the build, not the instrument.
+          bash pi-image/render-motor-args.sh "$MOTORS" | grep -q -- '--motor '
+          bash pi-image/render-motor-args.sh "a:22,23" | grep -qx -- '--motor a:22,23,-1,-1,-1'
+          for bad in "a:22,23 b:22,6" "a:22,99" "A:22,23" "a:22,23 a:5,6" "a:22,23,17" "nocolon"; do
+            if bash pi-image/render-motor-args.sh "$bad" >/dev/null 2>&1; then
+              echo "renderer accepted an invalid spec: $bad" >&2; exit 1
+            fi
+          done
+          echo "renderer rejects every malformed spec"
+
+      # shellcheck cannot see that a path resolves to nothing. Phase 0 runs on
+      # the host, so it can be run here for real against a fake image -- about a
+      # second, against a three-minute image build.
+      - name: cscript phase 0 stages the image correctly
+        run: bash pi-image/tests/test_cscript_phase0.sh
+
+      - name: write-time configuration applies, and refuses bad input
+        run: bash pi-image/tests/test_firstboot.sh
+
+      - name: flashers, README and CI agree with the manifest
+        run: bash pi-image/tests/test_bootstrap.sh
+
+      - name: the rendered unit is valid
+        run: |
+          . pi-image/pi-app.env
+          VENV="$REPO_DEST/.venv"
+          E="${APP_EXEC//\$\{VENV\}/$VENV}"
+          E="${E//\$\{REPO_DEST\}/$REPO_DEST}"
+          E="${E//\$\{SERVER_PORT\}/$SERVER_PORT}"
+          cat > /tmp/u.service <<UNIT
+          [Unit]
+          Description=$APP_NAME
+          After=network.target $SERVICE_REQUIRES
+          Requires=$SERVICE_REQUIRES
+          [Service]
+          ExecStart=$E
+          User=$PI_USER
+          EnvironmentFile=/etc/$APP_NAME.env
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          systemd-analyze verify /tmp/u.service 2>&1 | tee /tmp/v.log
+          ! grep -qiE 'invalid|failed to parse|unknown lvalue' /tmp/v.log
+
+  server:
+    name: two-motor server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # RPi.GPIO is shimmed by the test, so this runs on a normal runner. It is
+      # the only place the concurrency claim is actually checked: that two
+      # motors move at once and that stopping one leaves the other running.
+      - name: run the motor server suite
+        run: |
+          python -m pip install --quiet flask flask-caching
+          python pi-image/tests/test_motor_server.py
+
+      - name: the client library imports without the server's dependencies
+        run: |
+          python -m pip install --quiet requests
+          python -c "
+          from syringe_pump import SyringePump, run_motor, check_status
+          p = SyringePump(url='http://example:5000', motor='b', simulating=True)
+          assert p.motor == 'b'
+          p.aspirate_vol(10); p.dispense_vol(10); p.stop()
+          print('client ok')
+          "
+
+  macos-flasher:
+    name: macOS Bash 3 flasher compatibility
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: parse with Apple's system Bash
+        run: |
+          /bin/bash --version | head -1
+          /bin/bash -n pi-image/bootstrap.sh
+
+      # Running it, not just parsing it: Bash 3.2 accepts the syntax and then
+      # fails at run time on things like `local a=1 b=$a`.
+      - name: the configure-only path runs under Bash 3.2
+        run: |
+          FAKE="$(mktemp -d)"
+          echo 'console=serial0 root=PARTUUID=abc rootwait' > "$FAKE/cmdline.txt"
+          /bin/bash pi-image/bootstrap.sh --configure-only "$FAKE" --defaults
+          . pi-image/pi-app.env
+          grep -qx "ETH_ADDRESS=$ETH_ADDRESS" "$FAKE/$APP_NAME.conf"
+          grep -qx "MOTORS=$MOTORS" "$FAKE/$APP_NAME.conf"
+          # bash reads this file on the Pi: a CR would land inside a value.
+          ! grep -q $'\r' "$FAKE/$APP_NAME.conf"
+
+      - name: macOS tools and wiring are present
+        run: |
+          command -v diskutil
+          command -v shasum
+          /bin/bash pi-image/tests/test_bootstrap.sh
+
+  build:
+    name: build the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    needs: [lint, server, macos-flasher]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: free up disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: cache the base image
+        uses: actions/cache@v4
+        with:
+          path: /tmp/pi-image-cache/raspios.img.xz
+          key: raspios-lite-arm64-${{ github.run_id }}
+          restore-keys: raspios-lite-arm64-
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: host tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static systemd-container xz-utils \
+                                  parted e2fsprogs curl
+
+      # PI_PASSWORD comes from a repository secret so it never lands in the
+      # manifest, the logs, or git history. Without one the build still works
+      # and warns, producing an image whose password the flasher should replace.
+      - name: build
+        env:
+          PI_PASSWORD: ${{ secrets.PI_PASSWORD }}
+        run: sudo -E bash pi-image/build.sh /tmp/syringe-pump.img.xz
+
+      - name: audit the exact finished image
+        run: sudo bash pi-image/tests/test_built_image.sh /tmp/syringe-pump.img.xz
+
+      - name: image summary
+        run: |
+          ls -lh /tmp/syringe-pump.img.xz
+          cd /tmp
+          sha256sum syringe-pump.img.xz | tee syringe-pump.img.xz.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-image
+          path: |
+            /tmp/syringe-pump.img.xz
+            /tmp/syringe-pump.img.xz.sha256
+          retention-days: 14
+
+      - name: publish
+        if: github.ref == 'refs/heads/main' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="pi-image"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+              /tmp/syringe-pump.img.xz /tmp/syringe-pump.img.xz.sha256 \
+              --target "$GITHUB_SHA" \
+              --title "Ready-to-flash Pi image" \
+              --notes "CI-audited image. Flash with pi-image/bootstrap.sh or bootstrap.ps1, which prompt for this card's address, port, motor count and password. Do not apply Raspberry Pi Imager customisation."

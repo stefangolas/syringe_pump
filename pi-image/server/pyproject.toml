@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# The Pi's server environment -- and ONLY the Pi's server environment.
+#
+# Deliberately separate from the repository's own pyproject.toml.
+# motor_server.py is standalone: it imports flask, flask_caching and A4988,
+# and nothing else. The repo root also declares `requests`, which only the
+# controller-side client code uses, so pinning the two separately keeps the
+# instrument's dependency closure to exactly what runs on the instrument.
+#
+# RPi.GPIO is deliberately absent: it is a C extension supplied by Raspberry
+# Pi OS as python3-rpi.gpio and reached through the venv's system
+# site-packages. A uv-managed standalone Python would hide it.
+# ---------------------------------------------------------------------------
+[project]
+name = "syringe-pump-server"
+version = "0.1.0"
+description = "Frozen runtime environment for the syringe pump motor server"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=2.2.2",
+    "flask-caching>=2.0",
+    "redis>=4.5",
+]
+
+# Nothing here is importable as a package; this project exists only to pin a
+# dependency closure. Without this uv would try to build and install it.
+[tool.uv]
+package = false

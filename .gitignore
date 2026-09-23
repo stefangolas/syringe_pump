@@ -1,0 +1,16 @@
+# Python build and cache artifacts. Note that build/ and syringe_pump.egg-info/
+# are already tracked from before this file existed, so they still show up in
+# `git status` when a build touches them -- they are worth untracking, but that
+# is a deliberate commit of its own, not something to do silently here.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# uv writes a lock for whatever project directory it is run from. The only lock
+# this repo intends to keep is the frozen one the Pi image installs from.
+/uv.lock
+!pi-image/server/uv.lock
