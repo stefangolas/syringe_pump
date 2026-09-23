@@ -1,0 +1,22 @@
+# The Pi runs these with bash, and firstboot.sh and cscript.sh are COPIED INTO
+# THE IMAGE. A CRLF there breaks the shebang and the device silently never
+# applies its configuration -- it comes up on the baked defaults and nothing
+# says why. Pin them to LF regardless of the platform the repo is cloned onto.
+*.sh                       text eol=lf
+*.py                       text eol=lf
+
+# pi-app.env is sourced by bash on the build host, and the card's own
+# syringe-pump.conf is read by bash on the Pi. A trailing CR would end up
+# inside IMAGE_SHA256, TIMEZONE or MOTORS and fail in ways that look like
+# anything but a line ending.
+pi-image/*                 text eol=lf
+pi-image/server/*          text eol=lf
+pyproject.toml             text eol=lf
+uv.lock                    text eol=lf
+
+# PowerShell stays native to Windows.
+*.ps1                      text eol=crlf
+
+# Don't let git mangle these.
+*.rdb                      binary
+*.pyc                      binary
