@@ -1,5 +1,4 @@
-from .curl_requests import run_motor, check_status
-from agrow_pumps import AgrowModbusInterface
+from .curl_requests import run_motor, stop_motor, check_status
 import logging
 
 
@@ -21,18 +20,21 @@ direction_mapping = {'aspirate':'counter-clockwise', 'dispense':'clockwise'}
 class SyringePump:
     """A class to control syringe pump operations."""
 
-    def __init__(self, url = "http://10.194.22.184:5000", simulating = False, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None):
+    def __init__(self, url = "http://10.194.22.184:5000", simulating = False, motor = None, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None):
         """
         Initialize the SyringePump.
 
         Args:
             ip_address (str): The IP address of the pump server
             rinse_pump_array: The pump array for rinsing operations
+            motor (str): Which motor on the server drives this syringe,
+                e.g. "a" or "b". Leave as None for a single-motor server.
             rinse_pump_number (int): The pump number for rinse operations
             drain_pump_number (int): The pump number for drain operations
         """
         self.url = url
         self.simulating = simulating
+        self.motor = motor
         self.rinse_pump_array = rinse_pump_array
         self.rinse_pump_number = rinse_pump_number
         self.drain_pump_number = drain_pump_number
@@ -48,14 +50,16 @@ class SyringePump:
         if self.simulating:
             return
         steps = vol_to_steps(vol)
-        run_motor(steps=steps, url=self.url, direction="counter-clockwise", steptype="Half", stepdelay = 0.0001)
+        run_motor(steps=steps, url=self.url, motor=self.motor,
+                  direction="counter-clockwise", steptype="Half", stepdelay=0.0001)
     
     def dispense_vol(self, vol):
-        logging.info(f"Loading {vol} uL into syringe pump.")
+        logging.info(f"Dispensing {vol} uL from syringe pump.")
         if self.simulating:
             return
         steps = vol_to_steps(vol)
-        run_motor(steps=steps, url=self.url, direction="clockwise", steptype="Half", stepdelay = 0.0001)
+        run_motor(steps=steps, url=self.url, motor=self.motor,
+                  direction="clockwise", steptype="Half", stepdelay=0.0001)
 
 
     def rinse_trough(self, vol):
@@ -75,5 +79,12 @@ class SyringePump:
         self.rinse_pump_array.pump_by_number(self.drain_pump_number, vol + 10, 'high')
 
     def check_status(self):
-        """Check the status of the pump."""
-        return check_status()
+        """Check the status of this pump's motor."""
+        return check_status(url=self.url, motor=self.motor)
+
+    def stop(self):
+        """Stop this pump's motor mid-move."""
+        logging.info("Stopping syringe pump.")
+        if self.simulating:
+            return
+        return stop_motor(url=self.url, motor=self.motor)

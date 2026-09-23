@@ -6,7 +6,6 @@ setup(
     packages=find_packages(),
     install_requires=[
         "requests>=2.25.0",
-        "agrow-pumps>=0.1.0",
         "flask>=2.0.0",
     ],
     entry_points={
@@ -18,7 +17,7 @@ setup(
     description="A Python library for controlling syringe pumps",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/syringe_pump",
+    url="https://github.com/stefangolas/syringe_pump",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
