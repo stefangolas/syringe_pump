@@ -119,6 +119,46 @@ An invalid value is refused as a whole, so a typo cannot strand the instrument
 on an unreachable address; the result is logged to `syringe-pump-firstboot.log`
 beside the config, on the same partition.
 
+## Updating a Pi that is already running
+
+If a Pi is already set up and reachable over SSH, there is no need to reflash.
+
+```bash
+ssh chorylab@<pi>
+cd ~/syringe_pump && git pull
+sudo pi-image/install-on-pi.sh --dry-run      # see exactly what it would do
+sudo pi-image/install-on-pi.sh
+```
+
+The `git pull` alone is operationally inert: the server still defaults to the
+single motor `a:22,23,17,27,25` on the pins it already used, and `/run_motor`,
+`/stop_motor` and `/status` behave as before. The second motor appears only once
+`--motor` is passed twice, which the installer does.
+
+`install-on-pi.sh` refreshes the frozen venv, installs the systemd service and
+its `EnvironmentFile`, and starts the server. **It does not touch the network**,
+because you are reading its output over SSH and applying a static address would
+drop that session. Pass `--with-network` only from a console, or when the address
+being set is the one you are already connected on.
+
+| Option | Does |
+|---|---|
+| `--dry-run` | Print every action, change nothing |
+| `--one-motor` | Run only the first motor in `pi-app.env` |
+| `--motors "<spec>"` | Use a specific motor set |
+| `--port <n>` | Serve on another port |
+| `--with-network` | Also apply the static address — read the warning above |
+| `--no-firstboot` | Skip the write-time config machinery |
+
+It adapts to the machine rather than the manifest: the checkout location and its
+owning user are taken from the filesystem, so a repo at a different path or owned
+by a different account still works. A bad motor set is rejected before the venv
+is touched, and any existing unit is kept as `<unit>.before-install`.
+
+Afterwards, the port and motor set live in `/etc/syringe-pump.env`. Change either
+by editing that file and running `sudo systemctl restart syringe-pump` — no unit
+rewrite and no reinstall.
+
 ### The default link has no gateway and no DNS
 
 With neither set, the Pi has no default route, so it can only be reached from a

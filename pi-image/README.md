@@ -68,6 +68,17 @@ sudo bash bootstrap.sh --configure-only /media/$USER/bootfs
 Or edit `syringe-pump.conf` on the boot partition by hand and reboot the Pi. It
 is read on **every** boot.
 
+## Updating a Pi that is already running
+
+`install-on-pi.sh` installs this configuration onto a Pi reached over SSH,
+without reflashing. It uses the same manifest, the same `render-motor-args.sh`
+and the same EnvironmentFile indirection as the image, so a hand-updated Pi and
+a freshly flashed one end up configured identically.
+
+It deliberately leaves the network alone unless `--with-network` is passed:
+applying a static address over the SSH session you are using to run it would drop
+that session. See the [top-level README](../README.md#updating-a-pi-that-is-already-running).
+
 ## Configuring
 
 `pi-app.env` is the whole per-project interface. `build.sh`, `cscript.sh`,
