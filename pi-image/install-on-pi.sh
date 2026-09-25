@@ -270,9 +270,13 @@ say "wrote /etc/${APP_NAME}.env"
 EXECSTART="${APP_EXEC//\$\{VENV\}/$VENV}"
 EXECSTART="${EXECSTART//\$\{REPO_DEST\}/$REPO_DEST}"
 EXECSTART="${EXECSTART//\$\{SERVER_PORT\}/$SERVER_PORT}"
-case "$EXECSTART" in
-    *'${'*) die "unsubstituted placeholder in APP_EXEC: $EXECSTART" ;;
-esac
+# Only the BUILD-time placeholders must be gone. ${PUMP_PORT} deliberately
+# survives for systemd to expand at start.
+for _ph in '${VENV}' '${REPO_DEST}' '${SERVER_PORT}'; do
+    case "$EXECSTART" in
+        *"$_ph"*) die "unsubstituted build-time placeholder $_ph in APP_EXEC: $EXECSTART" ;;
+    esac
+done
 
 # Keep a copy of whatever was there before. This Pi was configured by hand, so
 # the existing unit may be someone's deliberate work.

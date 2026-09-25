@@ -98,8 +98,8 @@ ok "SSH, firstboot and application services enabled"
 # card's config can change them without a rebuild.
 grep -q "^EnvironmentFile=/etc/$APP_NAME.env$" "$UNIT" ||
     fail "the unit does not read /etc/$APP_NAME.env"
-grep -q 'ExecStart=.*--port=\$PUMP_PORT' "$UNIT" ||
-    fail "the port is baked into ExecStart instead of expanded at start"
+grep -q 'ExecStart=.*--port=\${PUMP_PORT}' "$UNIT" ||
+    fail "the port is not in the braced form systemd expands mid-word"
 grep -q 'ExecStart=.*\$MOTOR_ARGS' "$UNIT" ||
     fail "the motor set is baked into ExecStart instead of expanded at start"
 [ -f "$MNT/etc/$APP_NAME.env" ] || fail "/etc/$APP_NAME.env is missing"

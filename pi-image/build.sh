@@ -108,12 +108,17 @@ VENV="${REPO_DEST}/.venv"
 EXECSTART="${APP_EXEC//\$\{VENV\}/$VENV}"
 EXECSTART="${EXECSTART//\$\{REPO_DEST\}/$REPO_DEST}"
 EXECSTART="${EXECSTART//\$\{SERVER_PORT\}/$SERVER_PORT}"
-case "$EXECSTART" in
-    *'${'*)
-        echo "ERROR: unsubstituted placeholder left in APP_EXEC:" >&2
-        echo "       $EXECSTART" >&2
-        exit 1 ;;
-esac
+# Only the BUILD-time placeholders must be gone. ${PUMP_PORT} deliberately
+# survives into the unit for systemd to expand at start, so a blanket check for
+# '${' would reject a correct command line.
+for _ph in '${VENV}' '${REPO_DEST}' '${SERVER_PORT}'; do
+    case "$EXECSTART" in
+        *"$_ph"*)
+            echo "ERROR: unsubstituted build-time placeholder $_ph in APP_EXEC:" >&2
+            echo "       $EXECSTART" >&2
+            exit 1 ;;
+    esac
+done
 
 # --- the network profile --------------------------------------------------
 # Gateway and DNS are written ONLY when the manifest asks for them. With

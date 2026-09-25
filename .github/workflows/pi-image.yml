@@ -56,8 +56,22 @@ jobs:
           E="${E//\$\{REPO_DEST\}/$REPO_DEST}"
           E="${E//\$\{SERVER_PORT\}/$SERVER_PORT}"
           echo "ExecStart = $E"
+          # Only the BUILD-time placeholders must be gone. ${PUMP_PORT}
+          # deliberately survives for systemd to expand when the unit starts.
+          for ph in '${VENV}' '${REPO_DEST}' '${SERVER_PORT}'; do
+            case "$E" in
+              *"$ph"*) echo "unsubstituted build-time placeholder $ph in APP_EXEC" >&2; exit 1 ;;
+            esac
+          done
+          # systemd expands $VAR only as a whole word, ${VAR} anywhere. The port
+          # is mid-word so it must be braced; the motor args must not be, since
+          # they need splitting into separate arguments.
           case "$E" in
-            *'${'*) echo "unsubstituted placeholder remains in APP_EXEC" >&2; exit 1 ;;
+            *'--port=${PUMP_PORT}'*) ;;
+            *) echo "ExecStart must use --port=\${PUMP_PORT}; \$PUMP_PORT is not expanded mid-word" >&2; exit 1 ;;
+          esac
+          case "$E" in
+            *'${MOTOR_ARGS}'*) echo "MOTOR_ARGS must be unbraced so systemd splits it" >&2; exit 1 ;;
           esac
           test -n "$APP_NAME" && test -n "$PI_USER" && test -n "$ETH_ADDRESS"
           test -n "$MOTORS" && test -n "$SERVER_PROJECT" && test -n "$PYTHON_IMPORTS"

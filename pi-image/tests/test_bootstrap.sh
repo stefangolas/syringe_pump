@@ -107,13 +107,25 @@ ok "both flashers write every setting firstboot.sh can apply"
 # This is what makes the port and motor set changeable without a rebuild. If
 # APP_EXEC ever has them substituted in at build time instead, the card's config
 # silently stops affecting them.
+# The brace style is load-bearing, and the wrong one passes every other check
+# here while failing on a real Pi. systemd expands $VAR only as a whole word and
+# ${VAR} anywhere; the port is mid-word, so it MUST be braced, and the motor
+# arguments must NOT be, because they need whitespace splitting into several
+# arguments. This caught nothing in CI and cost a crash-looping unit on
+# hardware, hence the explicit test.
 case "$APP_EXEC" in
-    *'$PUMP_PORT'*)  ok "APP_EXEC leaves \$PUMP_PORT for systemd to expand" ;;
-    *) fail "APP_EXEC does not reference \$PUMP_PORT; the port is baked in" ;;
+    *'--port=${PUMP_PORT}'*)
+        ok 'APP_EXEC uses --port=${PUMP_PORT}, the form systemd expands mid-word' ;;
+    *'--port=$PUMP_PORT'*)
+        fail 'APP_EXEC uses --port=$PUMP_PORT; systemd only expands $VAR as a whole word, so this reaches argparse literally' ;;
+    *) fail "APP_EXEC does not reference PUMP_PORT; the port is baked in" ;;
 esac
 case "$APP_EXEC" in
-    *'$MOTOR_ARGS'*) ok "APP_EXEC leaves \$MOTOR_ARGS for systemd to expand" ;;
-    *) fail "APP_EXEC does not reference \$MOTOR_ARGS; the motor set is baked in" ;;
+    *'${MOTOR_ARGS}'*)
+        fail 'APP_EXEC uses ${MOTOR_ARGS}; braced means one argument, so several --motor flags arrive as a single string' ;;
+    *'$MOTOR_ARGS'*)
+        ok 'APP_EXEC uses $MOTOR_ARGS, which systemd splits into separate arguments' ;;
+    *) fail "APP_EXEC does not reference MOTOR_ARGS; the motor set is baked in" ;;
 esac
 grep -q "EnvironmentFile=/etc/\${APP_NAME}.env" "$PI_IMAGE_DIR/build.sh" \
     || fail "the rendered unit has no EnvironmentFile, so nothing can expand those"
