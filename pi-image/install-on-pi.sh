@@ -23,6 +23,11 @@
 #                       (default: whatever pi-app.env declares)
 #   --one-motor         shorthand for just the first motor in pi-app.env
 #   --port <n>          server port (default: pi-app.env's SERVER_PORT)
+#   --venv <path>       use an EXISTING Python environment instead of building
+#                       one. Needed on a Pi with no internet: building the venv
+#                       means fetching uv and downloading wheels, and an
+#                       isolated instrument can do neither. The environment is
+#                       still checked for the modules the server imports.
 #   --with-network      ALSO apply the static address. Read the warning above.
 #   --no-firstboot      skip the write-time config machinery
 #   --dry-run           print what would happen, change nothing
@@ -36,6 +41,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 MOTORS_ARG=""
 PORT_ARG=""
+VENV_OVERRIDE=""
 WITH_NETWORK=0
 WITH_FIRSTBOOT=1
 DRY_RUN=0
@@ -44,10 +50,11 @@ while [ $# -gt 0 ]; do
         --motors)       MOTORS_ARG="${2:-}"; shift 2 ;;
         --one-motor)    MOTORS_ARG="${MOTORS%% *}"; shift ;;
         --port)         PORT_ARG="${2:-}"; shift 2 ;;
+        --venv)         VENV_OVERRIDE="${2:-}"; shift 2 ;;
         --with-network) WITH_NETWORK=1; shift ;;
         --no-firstboot) WITH_FIRSTBOOT=0; shift ;;
         --dry-run)      DRY_RUN=1; shift ;;
-        -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '2,32p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -96,7 +103,16 @@ if [ -n "$OWNER" ] && [ "$OWNER" != root ] && [ "$OWNER" != "$PI_USER" ]; then
 fi
 id -u "$PI_USER" >/dev/null 2>&1 || die "user '$PI_USER' does not exist on this Pi"
 
-VENV="$REPO_DEST/.venv"
+if [ -n "$VENV_OVERRIDE" ]; then
+    # Relative paths are resolved against the repo, since that is where an
+    # existing environment most often lives (e.g. --venv env).
+    case "$VENV_OVERRIDE" in
+        /*) VENV="$VENV_OVERRIDE" ;;
+        *)  VENV="$REPO_DEST/$VENV_OVERRIDE" ;;
+    esac
+else
+    VENV="$REPO_DEST/.venv"
+fi
 PROJECT="$REPO_DEST/$SERVER_PROJECT"
 UNIT="/etc/systemd/system/${APP_NAME}.service"
 FB_UNIT="/etc/systemd/system/${APP_NAME}-firstboot.service"
@@ -107,6 +123,11 @@ echo "    repo      $REPO_DEST"
 echo "    user      $PI_USER"
 echo "    motors    $MOTORS"
 echo "    port      $SERVER_PORT"
+if [ -n "$VENV_OVERRIDE" ]; then
+    echo "    venv      $VENV  (existing, reused)"
+else
+    echo "    venv      $VENV  (will be rebuilt from $SERVER_PROJECT)"
+fi
 if [ "$WITH_NETWORK" = 1 ]; then
     echo "    network   WILL be set to ${ETH_ADDRESS}/${ETH_PREFIX} on ${ETH_IFACE}"
 else
@@ -116,7 +137,11 @@ fi
 echo
 
 # --- sanity checks before touching anything ------------------------------
-[ -f "$PROJECT/uv.lock" ] || die "$PROJECT/uv.lock is missing -- did 'git pull' run?"
+if [ -n "$VENV_OVERRIDE" ]; then
+    [ -x "$VENV/bin/python" ] || die "$VENV/bin/python is not an executable Python -- --venv points at nothing usable"
+else
+    [ -f "$PROJECT/uv.lock" ] || die "$PROJECT/uv.lock is missing -- did 'git pull' run?"
+fi
 [ -f "$REPO_DEST/syringe_pump/motor_server.py" ] || die "no syringe_pump/motor_server.py under $REPO_DEST"
 grep -q 'parse_motor_spec' "$REPO_DEST/syringe_pump/motor_server.py" \
     || die "motor_server.py predates multi-motor support -- run 'git pull' first"
@@ -141,6 +166,12 @@ elif ! dpkg -s python3-rpi.gpio >/dev/null 2>&1; then
     NEED="$NEED python3-rpi.gpio"
 fi
 if [ -n "$NEED" ]; then
+    # apt needs the network too, and on an isolated instrument it has none.
+    # Failing here with apt's own error tells you nothing about what to do.
+    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+        die "these packages are missing and this Pi has no DNS:$NEED
+       Install them while it has a network, or from local .debs, then re-run."
+    fi
     say "installing:$NEED"
     run env DEBIAN_FRONTEND=noninteractive apt-get update
     # shellcheck disable=SC2086  # deliberate split: one package per argument
@@ -150,26 +181,43 @@ else
 fi
 run systemctl enable --now redis-server
 
-# --- uv, pinned -----------------------------------------------------------
-UV="$(command -v uv || true)"
-if [ -z "$UV" ] || ! uv --version 2>&1 | grep -q "$UV_VERSION"; then
-    say "installing uv ${UV_VERSION}"
-    run bash -c "curl -LsSf 'https://astral.sh/uv/${UV_VERSION}/install.sh' \
-        | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh"
-    UV=/usr/local/bin/uv
+if [ -n "$VENV_OVERRIDE" ]; then
+    # --- reuse an existing environment -----------------------------------
+    # Nothing is fetched and nothing is rebuilt. This is the only path that
+    # works on an instrument with no route off its own switch, which is what
+    # the isolated-link design produces by construction.
+    say "using the existing environment at $VENV (not rebuilding, nothing fetched)"
 else
-    say "uv $(uv --version) already present"
-fi
+    # --- uv, pinned -------------------------------------------------------
+    UV="$(command -v uv || true)"
+    if [ -z "$UV" ] || ! uv --version 2>&1 | grep -q "$UV_VERSION"; then
+        # Both of the next two steps need the network. Say so before trying, so
+        # a no-internet Pi gets a usable instruction instead of a curl error.
+        if ! getent hosts astral.sh >/dev/null 2>&1; then
+            die "uv is not installed and this Pi cannot resolve astral.sh.
+       Building the environment needs to download uv and the wheels, so it
+       cannot be done from here. Either give the Pi a temporary internet
+       connection, or reuse the environment it already has:
+           sudo $0 --venv env $*"
+        fi
+        say "installing uv ${UV_VERSION}"
+        run bash -c "curl -LsSf 'https://astral.sh/uv/${UV_VERSION}/install.sh' \
+            | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh"
+        UV=/usr/local/bin/uv
+    else
+        say "uv $(uv --version) already present"
+    fi
 
-# --- the venv -------------------------------------------------------------
-# System interpreter with system site-packages, so apt's prebuilt RPi.GPIO
-# stays importable. A uv-managed standalone Python would hide it.
-say "building the frozen environment at $VENV"
-run rm -rf "$VENV"
-run "$UV" venv --python /usr/bin/python3 --system-site-packages "$VENV"
-run env UV_PROJECT_ENVIRONMENT="$VENV" "$UV" sync \
-    --project "$PROJECT" --frozen --no-dev --python /usr/bin/python3
-run chown -R "${PI_USER}:${PI_USER}" "$VENV"
+    # --- the venv ---------------------------------------------------------
+    # System interpreter with system site-packages, so apt's prebuilt RPi.GPIO
+    # stays importable. A uv-managed standalone Python would hide it.
+    say "building the frozen environment at $VENV"
+    run rm -rf "$VENV"
+    run "$UV" venv --python /usr/bin/python3 --system-site-packages "$VENV"
+    run env UV_PROJECT_ENVIRONMENT="$VENV" "$UV" sync \
+        --project "$PROJECT" --frozen --no-dev --python /usr/bin/python3
+    run chown -R "${PI_USER}:${PI_USER}" "$VENV"
+fi
 
 if [ "$DRY_RUN" = 0 ]; then
     # By spec for RPi.GPIO: importing it succeeds only on real Pi hardware, and
