@@ -3,6 +3,7 @@
 A Raspberry Pi syringe pump controller: a Flask server on the Pi driving one or
 two A4988 stepper drivers, and a Python client library for the controller PC.
 
+- [Client setup](CLIENT.md) — driving the pump from a controller PC
 - [Hardware: two-motor pinout](#hardware-two-motor-pinout)
 - [Flashing a Pi](#flashing-a-pi)
 - [HTTP API](#http-api)
@@ -200,6 +201,9 @@ that is already moving gets **409** rather than interleaving steps on the same
 STEP pin. An unknown steptype gets **400**.
 
 ## Client library
+
+Full setup, including the static address the controller PC needs, is in
+[CLIENT.md](CLIENT.md).
 
 ```python
 from syringe_pump import SyringePump
