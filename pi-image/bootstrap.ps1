@@ -43,10 +43,11 @@ $Defaults = @{
     PI_HOSTNAME = 'syringe-pump'
     PI_USER     = 'chorylab'
     SERVER_PORT = '5000'
-    MOTORS      = 'a:22,23,17,27,25 b:5,6,13,19,26'
+    MOTORS      = 'a:22,23,17,27,25 b:5,6,13,19,26 c:20,21,12,16,4'
 }
-# Dropping the second entry is how a card is made single-motor.
+# Dropping trailing entries is how a card is made one- or two-motor.
 $MotorsOne = 'a:22,23,17,27,25'
+$MotorsTwo = 'a:22,23,17,27,25 b:5,6,13,19,26'
 
 # Upper bound on what can plausibly be the SD card. SD cards for this job top
 # out around 128GB and the image needs only a few; any machine doing the
@@ -211,10 +212,12 @@ function Read-CardSettings {
         { param($v) ($v -match '^\d+$') -and [int]$v -ge 1 -and [int]$v -le 65535 } '1-65535'
 
     Write-Host ''
-    $count = Ask 'How many motors on this Pi? (1 or 2)' '2' `
-        { param($v) $v -in @('1', '2') } '1 or 2'
+    $count = Ask 'How many motors on this Pi? (1, 2 or 3)' '3' `
+        { param($v) $v -in @('1', '2', '3') } '1, 2 or 3'
     if ($count -eq '1') {
         $cfg['MOTORS'] = $MotorsOne
+    } elseif ($count -eq '2') {
+        $cfg['MOTORS'] = $MotorsTwo
     } else {
         $cfg['MOTORS'] = $Defaults.MOTORS
     }

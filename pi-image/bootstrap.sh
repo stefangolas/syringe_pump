@@ -35,9 +35,10 @@ D_ETH_DNS=""
 D_PI_HOSTNAME="syringe-pump"
 D_PI_USER="chorylab"
 D_SERVER_PORT="5000"
-D_MOTORS="a:22,23,17,27,25 b:5,6,13,19,26"
-# Dropping the second entry is how a card is made single-motor.
+D_MOTORS="a:22,23,17,27,25 b:5,6,13,19,26 c:20,21,12,16,4"
+# Dropping trailing entries is how a card is made one- or two-motor.
 MOTORS_ONE="a:22,23,17,27,25"
+MOTORS_TWO="a:22,23,17,27,25 b:5,6,13,19,26"
 
 CONFIGURE_ONLY=""
 USE_DEFAULTS=0
@@ -123,7 +124,7 @@ is_ipv4_or_empty() { [ -z "$1" ] || is_ipv4 "$1"; }
 is_addr_required()  { is_ipv4 "$1"; }
 is_prefix()   { is_num_in "$1" 1 32; }
 is_port()     { is_num_in "$1" 1 65535; }
-is_one_or_two() { [ "$1" = 1 ] || [ "$1" = 2 ]; }
+is_motor_count() { [ "$1" = 1 ] || [ "$1" = 2 ] || [ "$1" = 3 ]; }
 
 CFG_PASSWORD_B64=""
 read_card_settings() {
@@ -152,12 +153,12 @@ read_card_settings() {
         is_port "1-65535"
 
     echo >&2
-    ask MOTOR_COUNT "How many motors on this Pi? (1 or 2)" "2" is_one_or_two "1 or 2"
-    if [ "$MOTOR_COUNT" = 1 ]; then
-        CFG_MOTORS="$MOTORS_ONE"
-    else
-        CFG_MOTORS="$D_MOTORS"
-    fi
+    ask MOTOR_COUNT "How many motors on this Pi? (1, 2 or 3)" "3" is_motor_count "1, 2 or 3"
+    case "$MOTOR_COUNT" in
+        1) CFG_MOTORS="$MOTORS_ONE" ;;
+        2) CFG_MOTORS="$MOTORS_TWO" ;;
+        *) CFG_MOTORS="$D_MOTORS" ;;
+    esac
     echo "  motors: $CFG_MOTORS" >&2
     echo "  Each motor is commanded separately at /motor/<id>/run." >&2
 
