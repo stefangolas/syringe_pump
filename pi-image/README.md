@@ -118,7 +118,7 @@ by `firstboot.sh` at boot, so both produce identical arguments. It rejects a
 duplicate id, a pin outside BCM 0–27, the wrong number of pins, and a pin
 assigned to two motors (which would be silent: both motors would step together).
 
-The wiring table is in the [top-level README](../README.md#hardware-two-motor-pinout).
+The wiring table is in the [top-level README](../README.md#hardware-motor-pinout).
 
 ## Failure behaviour
 

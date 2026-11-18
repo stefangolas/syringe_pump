@@ -67,15 +67,16 @@ pip install -e .
 
 ## 3. Drive it
 
-One `SyringePump` per motor, both pointed at the same server:
+One `SyringePump` per motor, all pointed at the same server:
 
 ```python
 from syringe_pump import SyringePump
 
 URL = "http://192.168.10.2:5100"
 
-left  = SyringePump(url=URL, motor="a")
-right = SyringePump(url=URL, motor="b")
+left   = SyringePump(url=URL, motor="a")
+right  = SyringePump(url=URL, motor="b")
+third  = SyringePump(url=URL, motor="c")
 
 left.aspirate_vol(100)     # draw 100 uL
 left.dispense_vol(100)     # push it back
@@ -126,9 +127,13 @@ refused rather than queued, so overlapping steps can never corrupt a step count.
 Treat 409 as "send a stop first", not as an error to retry blindly.
 
 **Volume conversion is unverified.** `vol_to_steps()` derives steps from the
-constants at the top of `syringe_pump/syringe.py` — barrel radius 11 mm, thread
-pitch 0.8 mm, step angle 1.8°. Check those against your actual hardware before
-trusting a figure in microlitres. Nothing validates them.
+syringe's barrel radius plus the drive's thread pitch (0.8 mm) and step angle
+(1.8°). The radius defaults to 11 mm (30 mL syringe); for another size pass
+`syringe_radius=SYRINGE_RADII["10mL"]` or your own value in mm when creating the
+`SyringePump`. Check all three against your actual hardware before trusting a
+figure in microlitres — barrel sizes vary by brand, and nothing validates them.
+The step count also scales with the pump's `steptype` (default `"Full"`), so
+`"Half"` sends twice the pulses for the same volume.
 
 **Step timing is not what you ask for.** Below roughly `stepdelay=0.0005`, the
 per-step Python overhead dominates: a stroke measured at 8.5 s against a

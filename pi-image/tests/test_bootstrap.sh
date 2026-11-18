@@ -58,6 +58,16 @@ for f in "$SH" "$PS1F"; do
 done
 ok "single-motor spec is the manifest's first motor ($FIRST_MOTOR)"
 
+# Likewise the two-motor spec must be the manifest's first TWO entries, or
+# choosing "2 motors" rewires motor b.
+FIRST_TWO="$(printf '%s\n' "$MOTORS" | cut -d' ' -f1-2)"
+for f in "$SH" "$PS1F"; do
+    grep -q "MOTORS_TWO\|MotorsTwo" "$f" || fail "$(basename "$f") has no two-motor spec"
+    grep -q "'${FIRST_TWO}'\|\"${FIRST_TWO}\"" "$f" \
+        || fail "$(basename "$f") two-motor spec is not the manifest's first two entries ($FIRST_TWO)"
+done
+ok "two-motor spec is the manifest's first two motors ($FIRST_TWO)"
+
 # --- the release asset both flashers download ----------------------------
 # Both build the filename from their app name, so match the path and the
 # interpolation rather than a literal that is never spelled out in full.

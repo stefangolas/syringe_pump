@@ -1,42 +1,64 @@
 # Syringe Pump
 
-A Raspberry Pi syringe pump controller: a Flask server on the Pi driving one or
-two A4988 stepper drivers, and a Python client library for the controller PC.
+A Raspberry Pi syringe pump controller: a Flask server on the Pi driving up to
+three A4988 stepper drivers, and a Python client library for the controller PC.
 
 - [Client setup](CLIENT.md) — driving the pump from a controller PC
-- [Hardware: two-motor pinout](#hardware-two-motor-pinout)
+- [Hardware: motor pinout](#hardware-motor-pinout)
 - [Flashing a Pi](#flashing-a-pi)
 - [HTTP API](#http-api)
 - [Client library](#client-library)
 
-## Hardware: two-motor pinout
+## Hardware: motor pinout
 
-Two independent motors, each on its own A4988. BCM numbering is what the
-software uses; the physical header pin is what you actually count to when
+Up to three independent motors, each on its own A4988. BCM numbering is what
+the software uses; the physical header pin is what you actually count to when
 wiring. This is the pinout the image ships with, declared in
 [`pi-image/pi-app.env`](pi-image/pi-app.env) as:
 
 ```
-MOTORS='a:22,23,17,27,25 b:5,6,13,19,26'
+MOTORS='a:22,23,17,27,25 b:5,6,13,19,26 c:20,21,12,16,4'
 ```
 
-| A4988 signal | Motor **a** BCM | Motor **a** pin | Motor **b** BCM | Motor **b** pin |
-|---|---|---|---|---|
-| DIR  | GPIO22 | 15 | GPIO5  | 29 |
-| STEP | GPIO23 | 16 | GPIO6  | 31 |
-| MS1  | GPIO17 | 11 | GPIO13 | 33 |
-| MS2  | GPIO27 | 13 | GPIO19 | 35 |
-| MS3  | GPIO25 | 22 | GPIO26 | 37 |
+Every Pi connection, as wired on the instrument. "Pin" is the physical header
+pin; the GPIO numbers are what `MOTORS` lists.
+
+| A4988 pin | Motor **a** | Motor **b** | Motor **c** |
+|---|---|---|---|
+| DIR    | pin 15 (GPIO22) | pin 29 (GPIO5)  | pin 38 (GPIO20) |
+| STEP   | pin 16 (GPIO23) | pin 31 (GPIO6)  | pin 40 (GPIO21) |
+| MS1    | pin 11 (GPIO17) | pin 33 (GPIO13) | pin 32 (GPIO12) |
+| MS2    | pin 13 (GPIO27) | pin 35 (GPIO19) | pin 36 (GPIO16) |
+| MS3    | pin 22 (GPIO25) | pin 37 (GPIO26) | pin 7 (GPIO4)   |
+| ENABLE | pin 14 (GND)    | pin 34 (GND)    | pin 39 (GND)    |
+| GND (logic side) | pin 6 (GND) | pin 30 (GND) | pin 25 (GND) |
+| VDD    | pin 2 (5 V)     | pin 4 (5 V)     | pin 1 (3.3 V)   |
+| RESET + SLEEP | jumpered together on the driver | same | same |
+
+Header pins in use: 1, 2, 4, 6, 7, 11, 13, 14, 15, 16, 22, 25, 29, 30, 31, 32,
+33, 34, 35, 36, 37, 38, 39, 40. GND pins 9 and 20 and 3.3 V pin 17 are still
+free.
 
 Motor **b**'s five signals are physical pins 29, 31, 33, 35, 37 — five
-consecutive positions in the header's odd column, with GND on pin 39 right
-below them. That is deliberate: a second driver adds one contiguous ribbon
-rather than five wires scattered across the header.
+consecutive positions in the header's odd column. That is deliberate: a second
+driver adds one contiguous ribbon rather than five wires scattered across the
+header.
+
+Motor **c**'s DIR, STEP, MS1 and MS2 sit at the bottom of the even column
+(pins 32–40), interleaved with motor b's ground pins 30 and 34. Only MS3 has to
+reach up to pin 7: it is the last free GPIO that is not on a bus. GPIO24
+(pin 18) is also free, but `run_motor.py` drives it as an enable pin, so it was
+left alone.
+
+Motor c's VDD is on 3.3 V because both 5 V pins already feed a and b. That is
+inside the A4988's 3–5.5 V logic range, and it suits the Pi better: at 5 V the
+A4988 needs 3.5 V for a reliable logic high, while the Pi's GPIO outputs only
+3.3 V. A and b work at 5 V, but with less margin.
 
 ### Why these pins
 
 No signal here touches a peripheral bus, so nothing has to be given up to add
-the second motor:
+the second or third motor:
 
 - **I²C** (GPIO2/3, pins 3/5) — free
 - **SPI** (GPIO7–11, pins 26/24/21/19/23) — free
@@ -47,19 +69,26 @@ That last one matters. `MotorServer.__init__`'s old defaults were
 passed `(17, 27, 25)` instead — the code carried two different answers. The
 manifest now states one, and the server is always started with it explicitly.
 
-### Per-driver wiring, both drivers alike
+### Per-driver wiring, every driver alike
 
 | A4988 pin | Connect to |
 |---|---|
 | VMOT, GND | Motor supply (8–35 V) and its ground |
-| VDD, GND | Pi 5 V (pin 2 or 4) and Pi GND (pin 6, 9, 14, 20, 25, 30, 34 or 39) |
-| 1A / 1B / 2A / 2B | The two motor coils |
-| RESET + SLEEP | Bridge them together, then to VDD |
-| ENABLE | GND — see below |
+| VDD, GND | Pi 5 V or 3.3 V, and a Pi GND, per the table above |
+| 1A / 1B / 2A / 2B | The two motor coils: 1A/1B one coil, 2A/2B the other |
+| RESET + SLEEP | A short jumper between them on the driver; no wire to the Pi. The board pulls SLEEP high, and the jumper holds RESET high with it |
+| ENABLE | A Pi GND — see below |
 | DIR, STEP, MS1–MS3 | Per the table above |
 
-Put a 100 µF electrolytic across VMOT/GND at each driver, and share a common
-ground between the motor supply and the Pi.
+The driver's two GND pins are connected on the board, so wiring the logic GND
+to the Pi and the power GND to the supply gives them a common ground.
+
+Put a 100 µF electrolytic across VMOT/GND at each driver, + leg to VMOT.
+Set each driver's current limit with its potentiometer before running the
+motor, and never connect or disconnect a motor while VMOT is live. Because
+ENABLE is tied low (below),
+every motor draws holding current whenever the Pi is on, so size the motor
+supply for all of them at once.
 
 ### ENABLE, and what the driver class does not do
 
@@ -75,10 +104,11 @@ motor. If you want the server to de-energise idle motors, that needs an enable
 pin per motor added to `A4988Nema` — currently unimplemented, and a real
 change rather than a config tweak.
 
-### Running one motor instead of two
+### Running fewer motors
 
-Drop the second entry. `MOTORS='a:22,23,17,27,25'` gives a single-motor pump,
-and the flasher asks "how many motors?" so one image serves both builds. With
+Drop trailing entries. `MOTORS='a:22,23,17,27,25'` gives a single-motor pump and
+`MOTORS='a:22,23,17,27,25 b:5,6,13,19,26'` a two-motor one. The flasher asks
+"how many motors?" (1, 2 or 3), so one image serves every build. With
 MS1–MS3 strapped in hardware instead of driven, use the two-pin form:
 `a:22,23` — the driver is then passed `(-1,-1,-1)` and leaves those pins alone.
 
@@ -133,8 +163,12 @@ sudo pi-image/install-on-pi.sh
 
 The `git pull` alone is operationally inert: the server still defaults to the
 single motor `a:22,23,17,27,25` on the pins it already used, and `/run_motor`,
-`/stop_motor` and `/status` behave as before. The second motor appears only once
-`--motor` is passed twice, which the installer does.
+`/stop_motor` and `/status` behave as before. Further motors appear only once
+more `--motor` flags are passed, which the installer does.
+
+The installer's default is every motor in `pi-app.env`, which is now three. On a
+Pi with only two drivers wired, pass the set explicitly:
+`--motors "a:22,23,17,27,25 b:5,6,13,19,26"`.
 
 `install-on-pi.sh` refreshes the frozen venv, installs the systemd service and
 its `EnvironmentFile`, and starts the server. **It does not touch the network**,
@@ -173,7 +207,7 @@ internet. The flasher prints the exact command for your chosen address.
 
 ## HTTP API
 
-Each motor is addressed by its id, so the two are commanded independently.
+Each motor is addressed by its id, so each is commanded independently.
 
 | Method | Path | Does |
 |---|---|---|
@@ -218,9 +252,29 @@ left.stop()               # abort a move in progress
 print(left.check_status())
 ```
 
-Volume is converted to steps from the syringe geometry at the top of
-`syringe_pump/syringe.py` (barrel radius, thread pitch, step angle) — check
-those constants match your hardware before trusting a volume.
+Volume is converted to steps from the syringe's barrel radius and the drive's
+thread pitch and step angle. The radius is set per pump and defaults to the
+30 mL syringe (11 mm); pick another from `SYRINGE_RADII` or pass your own in mm:
+
+```python
+from syringe_pump import SyringePump, SYRINGE_RADII
+
+small = SyringePump(url="http://10.194.22.184:5000", motor="c",
+                    syringe_radius=SYRINGE_RADII["10mL"])
+```
+
+Thread pitch and step angle are fixed by the motor and lead screw, so they stay
+as constants at the top of `syringe_pump/syringe.py`. Check all three against
+your hardware before trusting a volume — barrel sizes vary by brand.
+
+The conversion is step-mode aware. Each pump has a `steptype` (default
+`"Full"`; also `"Half"`, `"1/4"`, `"1/8"`, `"1/16"`), and the step count is
+scaled to match, so the same volume comes out in every mode. Override it per
+move with `dispense_vol(100, steptype="1/8")`. Finer modes run smoother but send
+more pulses, so a move takes proportionally longer at the same step delay. If a
+driver's MS1–MS3 are strapped in hardware, set `steptype` to match the
+strapping: the server cannot change the mode, so a mismatch gives the wrong
+volume.
 
 Pass `simulating=True` to make the motion calls no-ops.
 
