@@ -57,6 +57,11 @@ class A4988Nema(object):
             self.mode_pins = False
 
         self.stop_motor = False
+        # Outcome of the most recent motor_go, read by the server after it
+        # returns. The loop below swallows exceptions, so without these a move
+        # that died halfway looked exactly like one that finished.
+        self.steps_completed = 0
+        self.last_error = None
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
 
@@ -124,6 +129,8 @@ class A4988Nema(object):
 
         """
         self.stop_motor = False
+        self.steps_completed = 0
+        self.last_error = None
         # setup GPIO
         GPIO.setup(self.direction_pin, GPIO.OUT)
         GPIO.setup(self.step_pin, GPIO.OUT)
@@ -154,6 +161,9 @@ class A4988Nema(object):
                 time.sleep(stepdelay)
                 GPIO.output(self.step_pin, False)
                 time.sleep(stepdelay)
+                # Counted after the full high/low cycle, so it is the number of
+                # complete pulses the driver has actually been sent.
+                self.steps_completed = i + 1
                 # Unconditional in this fork, so a 20000-step run wrote 20000
                 # lines to the journal and the I/O showed up as step jitter.
                 # Back behind the flag the parameter already exists for.
@@ -168,6 +178,7 @@ class A4988Nema(object):
             print(sys.exc_info()[0])
             print(motor_error)
             print("RpiMotorLib  : Unexpected error:")
+            self.last_error = "{}: {}".format(type(motor_error).__name__, motor_error)
         finally:
             # cleanup
             GPIO.output(self.step_pin, False)

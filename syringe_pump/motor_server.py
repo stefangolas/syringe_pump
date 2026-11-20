@@ -183,18 +183,32 @@ class MotorServer:
             self.cache.set(motor.stop_key, 'False')
             motor.motor.motor_go(clockwise=clockwise, steptype=steptype,
                                  steps=steps, stepdelay=stepdelay)
-            stopped = _stop_requested(self.cache, motor.stop_key)
-            return jsonify({
-                "status": "stopped" if stopped else "success",
-                "motor": motor_id,
-                "steps": steps,
-                "direction": "clockwise" if clockwise else "counter-clockwise",
-                "message": "motor {} {} {} steps {}".format(
-                    motor_id,
-                    "stopped during" if stopped else "ran",
-                    steps,
-                    "clockwise" if clockwise else "counter-clockwise"),
-            }), 200
+            completed = motor.motor.steps_completed
+            error = motor.motor.last_error
+            way = "clockwise" if clockwise else "counter-clockwise"
+            # "steps" stays the REQUESTED count so existing clients read it as
+            # before; "steps_completed" is what the driver was actually sent.
+            reply = {"motor": motor_id, "steps": steps,
+                     "steps_completed": completed, "direction": way}
+
+            # motor_go swallows exceptions from its step loop, so a move that
+            # died halfway used to be reported as "success". It is an error.
+            if error is not None:
+                reply.update(status="error", message="motor {} failed after {} of {} steps: {}".format(
+                    motor_id, completed, steps, error))
+                return jsonify(reply), 500
+            if completed == steps:
+                # Complete, even if a stop landed after the last step.
+                reply.update(status="success", message="motor {} ran {} steps {}".format(
+                    motor_id, steps, way))
+                return jsonify(reply), 200
+            if _stop_requested(self.cache, motor.stop_key):
+                reply.update(status="stopped", message="motor {} stopped after {} of {} steps {}".format(
+                    motor_id, completed, steps, way))
+                return jsonify(reply), 200
+            reply.update(status="error", message="motor {} ended after {} of {} steps with no stop requested".format(
+                motor_id, completed, steps))
+            return jsonify(reply), 500
         except ValueError as bad_request:
             # An invalid steptype or motor_type is the caller's problem, not
             # the server's, so say so with a 400 rather than a 500.
