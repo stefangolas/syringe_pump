@@ -216,7 +216,16 @@ jobs:
     name: build the image
     # Pinned: on ubuntu-latest (26.04) qemu-user-static is only a virtual
     # package and apt refuses to install it. 24.04 is the host the last
-    # published image was built on.
+    # published image was built on, and pinning the build host matches the
+    # pinned base image, sdm and uv below.
+    #
+    # Revisit when GitHub announces 24.04's retirement (expected around 2029;
+    # 20.04 was retired in 2025), or when bumping the base image or sdm anyway.
+    # Do it on a branch via workflow_dispatch with publish off, so the published
+    # image is untouched. Likely first step: replace qemu-user-static in "host
+    # tooling" with qemu-user-binfmt, or drop it, since setup-qemu-action already
+    # registers arm64 emulation. Then expect sdm / systemd-nspawn / parted
+    # differences on the newer host.
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     needs: [lint, server, macos-flasher]
