@@ -19,6 +19,19 @@ MICROSTEPS = {
 }
 DEFAULT_STEPTYPE = "Full"
 
+# Seconds the STEP pin is held high, and then low, per step: one step takes
+# 2 x stepdelay, so 0.0005 is 1000 full steps/s. Chosen on the instrument:
+# motor c with a syringe fitted runs smoothly in Full at this speed. (The old
+# hardcoded 0.0001 was below the point where the server's per-step overhead,
+# not the delay, sets the real speed.)
+DEFAULT_STEPDELAY = 0.0005
+
+
+def _check_stepdelay(stepdelay):
+    if not (isinstance(stepdelay, (int, float)) and stepdelay > 0):
+        raise ValueError(f"stepdelay must be a positive number of seconds, got {stepdelay!r}")
+    return stepdelay
+
 
 def _microsteps(steptype):
     try:
@@ -62,7 +75,7 @@ direction_mapping = {'aspirate':'counter-clockwise', 'dispense':'clockwise'}
 class SyringePump:
     """A class to control syringe pump operations."""
 
-    def __init__(self, url = "http://10.194.22.184:5000", simulating = False, motor = None, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None, syringe_radius = DEFAULT_SYRINGE_RADIUS, steptype = DEFAULT_STEPTYPE):
+    def __init__(self, url = "http://10.194.22.184:5000", simulating = False, motor = None, rinse_pump_array = None, rinse_pump_number = None, drain_pump_number = None, syringe_radius = DEFAULT_SYRINGE_RADIUS, steptype = DEFAULT_STEPTYPE, stepdelay = DEFAULT_STEPDELAY):
         """
         Initialize the SyringePump.
 
@@ -81,52 +94,61 @@ class SyringePump:
                 driver's MS1-MS3 are strapped in hardware rather than wired to
                 the Pi, this MUST match the strapping, since the server cannot
                 change it.
+            stepdelay (float): Seconds high, then low, per step pulse, so one
+                step takes 2 x stepdelay. Larger is slower. In Full mode a
+                motor can resonate and skip steps in a narrow speed band
+                (motor c: around 0.005); avoid it or use a finer steptype.
         """
         if not syringe_radius > 0:
             raise ValueError(f"syringe_radius must be positive, got {syringe_radius!r}")
+        _check_stepdelay(stepdelay)
         _microsteps(steptype)  # fail now, not on the first move
         self.url = url
         self.simulating = simulating
         self.motor = motor
         self.syringe_radius = syringe_radius
         self.steptype = steptype
+        self.stepdelay = stepdelay
         self.rinse_pump_array = rinse_pump_array
         self.rinse_pump_number = rinse_pump_number
         self.drain_pump_number = drain_pump_number
 
-    def _move(self, vol, direction, steptype):
+    def _move(self, vol, direction, steptype, stepdelay):
         # Steps and steptype come from the same value, so the count sent is
         # always the one computed for the mode the driver is put in.
         steptype = steptype or self.steptype
+        stepdelay = self.stepdelay if stepdelay is None else _check_stepdelay(stepdelay)
         steps = vol_to_steps(vol, self.syringe_radius, steptype)
         return run_motor(steps=steps, url=self.url, motor=self.motor,
-                         direction=direction, steptype=steptype, stepdelay=0.0001)
+                         direction=direction, steptype=steptype, stepdelay=stepdelay)
 
-    def aspirate_vol(self, vol, steptype=None):
+    def aspirate_vol(self, vol, steptype=None, stepdelay=None):
         """
         Load a specific volume into the syringe.
 
         Args:
             vol (float): The volume to load, in uL
             steptype (str): Override this pump's step mode for this move only
+            stepdelay (float): Override this pump's step delay for this move only
         """
         logging.info(f"Loading {vol} uL into syringe pump.")
         if self.simulating:
             return
-        return self._move(vol, "counter-clockwise", steptype)
+        return self._move(vol, "counter-clockwise", steptype, stepdelay)
 
-    def dispense_vol(self, vol, steptype=None):
+    def dispense_vol(self, vol, steptype=None, stepdelay=None):
         """
         Dispense a specific volume from the syringe.
 
         Args:
             vol (float): The volume to dispense, in uL
             steptype (str): Override this pump's step mode for this move only
+            stepdelay (float): Override this pump's step delay for this move only
         """
         logging.info(f"Dispensing {vol} uL from syringe pump.")
         if self.simulating:
             return
-        return self._move(vol, "clockwise", steptype)
+        return self._move(vol, "clockwise", steptype, stepdelay)
 
 
     def rinse_trough(self, vol):

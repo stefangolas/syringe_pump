@@ -276,6 +276,19 @@ driver's MS1–MS3 are strapped in hardware, set `steptype` to match the
 strapping: the server cannot change the mode, so a mismatch gives the wrong
 volume.
 
+Speed is set per pump with `stepdelay` (default `0.0005`, about 1000 full
+steps/s, smooth on motor c with a syringe fitted); one step takes
+`2 × stepdelay`. In Full mode a motor can resonate in a narrow speed band,
+buzzing and skipping steps there while running smoothly above and below it.
+Motor c (unloaded) is smooth in Full at `0.01`, `0.001` and `0.0005`, but
+buzzes at `0.005` (100 steps/s). Avoid that band, or use a finer `steptype`,
+which smooths it out: Half at `0.002` is also smooth.
+
+```python
+c = SyringePump(url=URL, motor="c")                     # Full, 0.0005: the defaults
+slow = SyringePump(url=URL, motor="c", stepdelay=0.001)  # Full, 500 steps/s
+```
+
 Pass `simulating=True` to make the motion calls no-ops.
 
 `rinse_trough()` needs a pump array object supplying `pump_by_number()`, passed
