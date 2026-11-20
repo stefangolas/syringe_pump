@@ -195,6 +195,46 @@ class TwoMotorServerTest(unittest.TestCase):
         long_run.join(timeout=30)
         self.assertFalse(long_run.is_alive(), "stop did not end motor a's run")
         self.assertEqual(outcome["a"]["status"], "stopped")
+        # "steps" stays the request; "steps_completed" is what actually ran.
+        self.assertEqual(outcome["a"]["steps"], 4000)
+        self.assertLess(outcome["a"]["steps_completed"], 4000)
+        self.assertEqual(outcome["b"]["steps_completed"], 10)
+
+    # --- completed steps --------------------------------------------------
+
+    def test_success_reports_every_step_completed(self):
+        body = self.client.post(
+            "/motor/a/run",
+            json={"steps": 7, "steptype": "Half", "stepdelay": 0}).get_json()
+        self.assertEqual(body["status"], "success")
+        self.assertEqual((body["steps"], body["steps_completed"]), (7, 7))
+        pulses = sum(1 for pin, high in GPIO.edges if pin == 23 and high)
+        self.assertEqual(pulses, 7)
+
+    def test_fault_mid_move_is_500_not_success(self):
+        """motor_go swallows exceptions from its step loop, so a move that died
+        halfway used to come back as "success" with the full step count."""
+        real_output = GPIO.output
+        pulses = {"n": 0}
+
+        def faulty(pin, value):
+            if pin == 6 and value:          # motor b's STEP pin going high
+                pulses["n"] += 1
+                if pulses["n"] > 5:
+                    raise OSError("simulated GPIO fault")
+            real_output(pin, value)
+
+        GPIO.output = faulty
+        try:
+            response = self.client.post(
+                "/motor/b/run", json={"steps": 20, "steptype": "Half", "stepdelay": 0})
+        finally:
+            GPIO.output = real_output
+        body = response.get_json()
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(body["status"], "error")
+        self.assertEqual((body["steps"], body["steps_completed"]), (20, 5))
+        self.assertIn("simulated GPIO fault", body["message"])
 
     def test_stop_is_not_global(self):
         self.client.post("/motor/a/stop")
