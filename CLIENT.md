@@ -89,7 +89,28 @@ motor `a`** via the legacy single-motor routes, which is the one mistake here
 that fails silently — the wrong motor moves and nothing reports an error.
 
 Pass `simulating=True` to make the motion calls no-ops without touching the
-instrument.
+instrument. They return `{"status": "success", "simulated": True}`.
+
+**A failed move raises.** `aspirate_vol` and `dispense_vol` raise a
+`SyringePumpError` subclass whenever a move does not fully complete: the server
+is unreachable, the reply times out, the motor is busy, the server rejects the
+move, or it was stopped partway. Catch `SyringePumpError` to handle them all:
+
+```python
+from syringe_pump import SyringePump, SyringePumpError
+
+pump = SyringePump(url=URL, motor="b", name="ctb")
+try:
+    pump.dispense_vol(5000)
+except SyringePumpError as e:
+    print(e)    # names the pump, motor and URL, and how much moved if known
+```
+
+`e.steps_completed` and `e.volume_completed_ul` say how far the move got when
+the server could report it, and are `None` when that is unknown (after a
+timeout, for instance). Pass `strict=False` for the old behaviour: return
+`None` on failure, with no exception. The [README](README.md#when-a-move-fails)
+lists every exception and the timeout formula.
 
 ### Raw HTTP
 
@@ -118,7 +139,9 @@ curl http://192.168.10.2:5100/motor/a/status
 **`run` blocks for the whole move.** A 15,000-step stroke holds the HTTP
 response open for ~8 s. That is intentional — the reply reports the completed
 move — but it means a naive client with a short timeout will give up while the
-motor is still going, and the motor does not stop when the client does. To
+motor is still going, and the motor does not stop when the client does.
+`SyringePump` sizes its timeout to each move and, if one still expires while the
+motor is moving, sends a stop before raising `PumpTimeoutError`. To
 overlap two motors, fire both requests concurrently (threads, `asyncio`, or two
 backgrounded `curl`s) rather than awaiting one then the other.
 
@@ -156,7 +179,9 @@ it on the lab LAN, that protection is gone.
 | Connection refused | Server not running. On the Pi: `systemctl status syringe-pump` |
 | Connection times out | Wrong subnet, or the packet is going out Wi-Fi. Check your route to `192.168.10.2` |
 | `404 unknown motor` | That id is not configured. `GET /motors` lists the real ones |
-| `409 busy` | Motor already moving. Stop it first |
+| `409 busy` / `PumpBusyError` | Motor already moving. Stop it first |
+| `PartialMoveError` | The move was stopped partway. `steps_completed` says how far it got |
+| `PumpRejectedError`, HTTP 500 | The move failed on the Pi partway; the message has the cause. Check `journalctl -u syringe-pump` |
 | Commands work, nothing moves | Server-side wiring, not the client. `/motors` confirms the pins; the server cannot sense a motor, so it reports success either way |
 | Wrong motor moves | `motor=` omitted, so it hit the legacy default-motor route |
 
