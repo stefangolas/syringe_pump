@@ -15,7 +15,14 @@ PI_IMAGE_DIR="$(cd "$HERE/.." && pwd)"
 ROOT="$(cd "$PI_IMAGE_DIR/.." && pwd)"
 README="$ROOT/README.md"
 SH="$PI_IMAGE_DIR/bootstrap.sh"
-PS1F="$PI_IMAGE_DIR/bootstrap.ps1"
+# bootstrap.ps1 is checked out with CRLF (.gitattributes keeps PowerShell
+# native to Windows). On Linux every line then ends in \r, so a pattern anchored
+# with $ never matches and every value reads as empty. Check a CR-stripped copy,
+# under the same file name so failure messages still say bootstrap.ps1.
+PS1_TMP="$(mktemp -d)"
+trap 'rm -rf "$PS1_TMP"' EXIT
+PS1F="$PS1_TMP/bootstrap.ps1"
+tr -d '\r' < "$PI_IMAGE_DIR/bootstrap.ps1" > "$PS1F"
 
 FAILED=0
 fail() { echo "FAIL: $*" >&2; FAILED=1; }
