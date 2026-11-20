@@ -229,10 +229,20 @@ curl -X POST http://10.194.22.184:5000/motor/a/run \
 curl -X POST http://10.194.22.184:5000/motor/a/stop
 ```
 
-`run` holds the response open for the duration of the move and then reports
-`"success"`, or `"stopped"` if a stop arrived first. A second `run` for a motor
-that is already moving gets **409** rather than interleaving steps on the same
-STEP pin. An unknown steptype gets **400**.
+`run` holds the response open for the duration of the move, then replies:
+
+| Outcome | HTTP | `status` |
+|---|---|---|
+| Every step sent | 200 | `"success"` |
+| A stop arrived first | 200 | `"stopped"` |
+| The motor is already moving | 409 | `"busy"` (rather than interleaving steps on the same STEP pin) |
+| Bad steps, stepdelay or steptype | 400 | `"error"` |
+| Unknown motor | 404 | `"error"` |
+| The move failed partway | 500 | `"error"`, with the cause in `message` |
+
+Replies to a move carry `steps` (the count requested) and `steps_completed`
+(the pulses the driver was actually sent), so a stopped or failed move says
+exactly how far it got.
 
 ## Client library
 
@@ -289,7 +299,51 @@ c = SyringePump(url=URL, motor="c")                     # Full, 0.0005: the defa
 slow = SyringePump(url=URL, motor="c", stepdelay=0.001)  # Full, 500 steps/s
 ```
 
-Pass `simulating=True` to make the motion calls no-ops.
+Pass `simulating=True` to make the motion calls no-ops; they then return
+`{"status": "success", "simulated": True}`.
+
+### When a move fails
+
+By default (`strict=True`) `aspirate_vol` and `dispense_vol` return the server's
+reply on success and **raise** if the move did not fully complete. Every
+exception is a `SyringePumpError`, so catch that when you only need to know
+whether it worked:
+
+| Exception | Raised when |
+|---|---|
+| `PumpUnreachableError` | No connection: refused, wrong address, or the link dropped |
+| `PumpTimeoutError` | No reply in time. If the motor is still moving, a stop is sent (`e.stop_sent`) |
+| `PumpBusyError` | HTTP 409: the motor was already moving, so this move never started |
+| `PumpRejectedError` | HTTP 400 / 404 / 500, with the server's message |
+| `PartialMoveError` | HTTP 200 but not `"success"`, e.g. stopped mid-move |
+
+Each exception names the pump, motor and URL, and carries `reply`,
+`steps_requested`, `steps_completed`, `volume_completed_ul` and `stop_sent`.
+`steps_completed` is `None` when the amount moved is unknown, for example after
+a timeout.
+
+```python
+from syringe_pump import SyringePump, SyringePumpError
+
+pump = SyringePump(url, motor="b", name="ctb", steptype="Full", stepdelay=0.001)
+try:
+    pump.dispense_vol(5000)
+except SyringePumpError as e:
+    print(e)        # what failed, where, and how much moved if known
+    e.steps_completed, e.volume_completed_ul
+```
+
+- `name` is a label for logs and error messages.
+- `move_timeout_s` sets how long to wait for a move's reply. The default sizes
+  it to each move as `steps × 2 × stepdelay × 1.5 + 10` seconds
+  (`default_move_timeout`), since the server replies only when the move ends.
+  Override it per pump or per call: `dispense_vol(5000, move_timeout_s=60)`.
+- `strict=False` restores the old behaviour: return whatever the server sent,
+  or `None` on failure, with no timeout unless one is set.
+
+The lower-level `run_motor`, `stop_motor` and `check_status` take
+`raise_on_error=True` for the same exceptions; by default they still log the
+problem and return `None`.
 
 `rinse_trough()` needs a pump array object supplying `pump_by_number()`, passed
 in as `rinse_pump_array`. Nothing in this repo provides one.
