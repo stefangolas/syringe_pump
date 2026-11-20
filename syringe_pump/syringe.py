@@ -47,7 +47,7 @@ def _microsteps(steptype):
 # wider than a BD one), so check yours against the manufacturer's spec or with
 # calipers before trusting a volume. Add your own entries freely.
 SYRINGE_RADII = {
-    "30mL": 11.0,    # the original hardcoded value
+    "30mL": 10.75,    # the original hardcoded value
     "10mL": 7.25,    # BD Luer-Lok, 14.5 mm inner diameter
 }
 DEFAULT_SYRINGE_RADIUS = SYRINGE_RADII["30mL"]
